@@ -6,7 +6,7 @@ import numpy as np
 from ortools.sat.python import cp_model
 import string
 
-# Konfigurasi halaman
+# Konfigurasi halaman agar lebar
 st.set_page_config(layout="wide")
 st.title("Job Shop Scheduling Solver")
 
@@ -71,7 +71,9 @@ if st.button("Selesaikan dan Visualisasikan"):
         # --- Bagian Visualisasi ---
         fig, ax = plt.subplots(figsize=(12, 6))
         all_event_times = {0, solver.objective_value}
-        colors = plt.cm.get_cmap('tab10', num_jobs)
+        
+        # Menggunakan cara baru untuk colormap agar tidak error
+        colors = plt.colormaps['tab10'].resampled(num_jobs)
         
         for m_idx, m_name in enumerate(machine_names):
             tasks_on_m = []
@@ -91,4 +93,24 @@ if st.button("Selesaikan dan Visualisasikan"):
                 if t['start'] > curr_m_time:
                     ax.barh(m_idx, t['start'] - curr_m_time, left=curr_m_time, color='lightgrey', hatch='///', edgecolor='grey', alpha=0.5)
 
-                ax
+                ax.barh(m_idx, duration, left=t['start'], color=colors(t['color_idx']), edgecolor='black', alpha=0.8)
+                
+                # Label Waktu Sesuai Contoh
+                ax.text(t['start'] + duration/2, m_idx + 0.3, f"{t['start']}-{t['end']}", 
+                        ha='center', va='bottom', fontsize=9, fontweight='bold', color='black')
+                # Nama Job
+                ax.text(t['start'] + duration/2, m_idx, t['name'], 
+                        ha='center', va='center', color='white', fontweight='bold', fontsize=12)
+                
+                curr_m_time = t['end']
+        
+        ax.set_yticks(np.arange(num_machines))
+        ax.set_yticklabels(machine_names)
+        ax.set_xticks(sorted(list(all_event_times)))
+        ax.set_xlabel("Waktu")
+        ax.set_title(f"Gantt Chart (Makespan: {solver.objective_value})")
+        ax.grid(axis='x', linestyle='--', alpha=0.7)
+        plt.tight_layout()
+        st.pyplot(fig)
+    else:
+        st.error("Solusi tidak ditemukan.")
