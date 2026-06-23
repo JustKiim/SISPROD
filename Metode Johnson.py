@@ -3,36 +3,37 @@ import matplotlib.pyplot as plt
 import pandas as pd
 import string
 
-def solve_2_machine_flowshop():
-    # 1. Pengaturan Mesin
-    print("--- Pengaturan Mesin ---")
-    m1_name = input("Masukkan nama Mesin 1: ")
-    m2_name = input("Masukkan nama Mesin 2: ")
-    
-    # 2. Input Data
-    try:
-        n = int(input("\nMasukkan jumlah job: "))
-    except ValueError:
-        print("Input harus angka!")
-        return
+st.title("2-Machine Flowshop Scheduler")
 
-    jobs = {}
-    # Membuat list abjad A-Z secara otomatis
-    alphabet = string.ascii_uppercase
-    
-    for i in range(n):
-        job_name = alphabet[i]
-        print(f"\n--- Data Job {job_name} ---")
-        t1 = int(input(f"Waktu proses '{job_name}' di {m1_name}: "))
-        t2 = int(input(f"Waktu proses '{job_name}' di {m2_name}: "))
-        jobs[job_name] = [t1, t2]
+# 1. Pengaturan Mesin
+col1, col2 = st.columns(2)
+with col1:
+    m1_name = st.text_input("Nama Mesin 1", value="Mesin 1")
+with col2:
+    m2_name = st.text_input("Nama Mesin 2", value="Mesin 2")
 
-    # 3. Logika Urutan (Greedy/Johnson's Rule)
-    # Untuk tujuan penjadwalan 2 mesin, kita gunakan pendekatan urutan
-    # agar mesin 2 tidak terlalu lama idle.
-    sequence = sorted(jobs.keys(), key=lambda x: jobs[x][0]) # Sederhana berdasarkan M1
+# 2. Input Jumlah Job
+n = st.number_input("Masukkan jumlah job", min_value=1, max_value=26, value=3)
+
+# Input Waktu Proses per Job
+jobs = {}
+alphabet = string.ascii_uppercase
+
+st.subheader("Input Waktu Proses")
+for i in range(n):
+    job_name = alphabet[i]
+    c1, c2 = st.columns(2)
+    with c1:
+        t1 = st.number_input(f"Waktu '{job_name}' di {m1_name}", min_value=1, value=5, key=f"t1_{i}")
+    with c2:
+        t2 = st.number_input(f"Waktu '{job_name}' di {m2_name}", min_value=1, value=5, key=f"t2_{i}")
+    jobs[job_name] = [t1, t2]
+
+# 3. Logika (Tombol Proses)
+if st.button("Hitung Jadwal"):
+    # Urutan sederhana berdasarkan waktu M1 (bisa diubah ke algoritma Johnson's)
+    sequence = sorted(jobs.keys(), key=lambda x: jobs[x][0])
     
-    # 4. Hitung Waktu Sequential
     table_data = []
     w1_time, w2_time = 0, 0
     all_times = {0}
@@ -50,37 +51,28 @@ def solve_2_machine_flowshop():
         all_times.update([start_w1, end_w1, start_w2, end_w2])
         w1_time, w2_time = end_w1, end_w2
 
-    # 5. Output Tabel
     df = pd.DataFrame(table_data)
-    print("\n--- Tabel Sequential Times ---")
-    print(df.to_string(index=False))
-    print(f"\nMakespan Total: {w2_time}")
+    
+    st.write("### Tabel Sequential Times")
+    st.table(df)
+    st.metric("Makespan Total", w2_time)
 
     # 6. Plotting
-    fig, ax = plt.subplots(figsize=(12, 5))
+    fig, ax = plt.subplots(figsize=(10, 4))
     
     for _, row in df.iterrows():
         # Plot Mesin 1
-        ax.barh(m1_name, row['M1 End'] - row['M1 Start'], left=row['M1 Start'], 
-                color='skyblue', edgecolor='black')
+        ax.barh(m1_name, row['M1 End'] - row['M1 Start'], left=row['M1 Start'], color='skyblue', edgecolor='black')
         ax.text((row['M1 Start'] + row['M1 End'])/2, m1_name, row['Job'], ha='center', va='center')
         
         # Idle di Mesin 2
         if row['M2 Start'] > row['M1 End']:
-            ax.barh(m2_name, row['M2 Start'] - row['M1 End'], left=row['M1 End'], 
-                    color='lightgrey', hatch='//', edgecolor='grey')
+            ax.barh(m2_name, row['M2 Start'] - row['M1 End'], left=row['M1 End'], color='lightgrey', hatch='//', edgecolor='grey')
         
         # Plot Mesin 2
-        ax.barh(m2_name, row['M2 End'] - row['M2 Start'], left=row['M2 Start'], 
-                color='salmon', edgecolor='black')
+        ax.barh(m2_name, row['M2 End'] - row['M2 Start'], left=row['M2 Start'], color='salmon', edgecolor='black')
         ax.text((row['M2 Start'] + row['M2 End'])/2, m2_name, row['Job'], ha='center', va='center')
 
-    ax.set_xticks(sorted(list(all_times)))
     ax.set_title(f"Gantt Chart (Makespan: {w2_time})")
     ax.set_xlabel("Waktu")
-    plt.grid(axis='x', linestyle='--', alpha=0.5)
-    plt.tight_layout()
-    plt.show()
-
-if __name__ == "__main__":
-    solve_2_machine_flowshop()
+    st.pyplot(fig)
