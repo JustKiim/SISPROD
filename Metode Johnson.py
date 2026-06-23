@@ -1,78 +1,113 @@
 import streamlit as st
+from ortools.sat.python import cp_model
+import collections
 import matplotlib.pyplot as plt
-import pandas as pd
-import string
+import numpy as np
 
-st.title("2-Machine Flowshop Scheduler")
+# Konfigurasi halaman agar grafik terlihat bagus
+st.set_page_config(layout="wide")
 
-# 1. Pengaturan Mesin
-col1, col2 = st.columns(2)
-with col1:
-    m1_name = st.text_input("Nama Mesin 1", value="Mesin 1")
-with col2:
-    m2_name = st.text_input("Nama Mesin 2", value="Mesin 2")
+st.title("Penyelesaian Job Shop Scheduling dengan Visualisasi yang Ditingkatkan")
 
-# 2. Input Jumlah Job
-n = st.number_input("Masukkan jumlah job", min_value=1, max_value=26, value=3)
+# Bagian Input (Sudah dioptimalkan untuk Streamlit)
+st.sidebar.header("Konfigurasi Masalah")
+try:
+    num_jobs = st.sidebar.number_input("Jumlah Job", min_value=1, value=2, step=1)
+    num_machines = st.sidebar.number_input("Jumlah Mesin", min_value=1, value=2, step=1)
+except Exception:
+    st.sidebar.error("Input harus berupa angka bulat positif!")
+    st.stop()
 
-# Input Waktu Proses per Job
-jobs = {}
-alphabet = string.ascii_uppercase
+machine_names = []
+for i in range(num_machines):
+    machine_names.append(st.sidebar.text_input(f"Nama Mesin {i+1}", value=f"M{i+1}", key=f"m_name_{i}"))
 
-st.subheader("Input Waktu Proses")
-for i in range(n):
-    job_name = alphabet[i]
-    c1, c2 = st.columns(2)
-    with c1:
-        t1 = st.number_input(f"Waktu '{job_name}' di {m1_name}", min_value=1, value=5, key=f"t1_{i}")
-    with c2:
-        t2 = st.number_input(f"Waktu '{job_name}' di {m2_name}", min_value=1, value=5, key=f"t2_{i}")
-    jobs[job_name] = [t1, t2]
-
-# 3. Logika (Tombol Proses)
-if st.button("Hitung Jadwal"):
-    # Urutan sederhana berdasarkan waktu M1 (bisa diubah ke algoritma Johnson's)
-    sequence = sorted(jobs.keys(), key=lambda x: jobs[x][0])
+jobs_data = []
+for i in range(num_jobs):
+    st.subheader(f"Data Job ke-{i+1}")
+    # Menggunakan alphabet seperti pada gambar contoh (B, D, A, C)
+    import string
+    alphabet = string.ascii_uppercase
+    default_name = alphabet[i] if i < len(alphabet) else f"Job {i+1}"
     
-    table_data = []
-    w1_time, w2_time = 0, 0
-    all_times = {0}
+    job_name = st.text_input(f"Nama Job ke-{i+1}", value=default_name, key=f"job_name_{i}")
+    tasks = []
     
-    for job in sequence:
-        start_w1 = w1_time
-        end_w1 = start_w1 + jobs[job][0]
-        
-        start_w2 = max(end_w1, w2_time)
-        end_w2 = start_w2 + jobs[job][1]
-        
-        table_data.append({'Job': job, 'M1 Start': start_w1, 'M1 End': end_w1, 
-                           'M2 Start': start_w2, 'M2 End': end_w2})
-        
-        all_times.update([start_w1, end_w1, start_w2, end_w2])
-        w1_time, w2_time = end_w1, end_w2
-
-    df = pd.DataFrame(table_data)
+    # Gunakan baris input untuk setiap mesin agar lebih rapi
+    cols = st.columns(num_machines)
+    for j in range(num_machines):
+        with cols[j]:
+            time = st.number_input(f"Waktu {job_name} di {machine_names[j]}", min_value=1, value=5, key=f"time_{i}_{j}")
+            tasks.append((j, int(time)))
     
-    st.write("### Tabel Sequential Times")
-    st.table(df)
-    st.metric("Makespan Total", w2_time)
+    jobs_data.append({'name': job_name, 'tasks': tasks})
 
-    # 6. Plotting
-    fig, ax = plt.subplots(figsize=(10, 4))
+# Pemecah Masalah (Solver) - Logika tidak berubah
+if st.button("Selesaikan dan Visualisasikan"):
+    model = cp_model.CpModel()
+    horizon = sum(task[1] for job in jobs_data for task in job['tasks'])
+    all_tasks = {}
+    machine_to_intervals = collections.defaultdict(list)
     
-    for _, row in df.iterrows():
-        # Plot Mesin 1
-        ax.barh(m1_name, row['M1 End'] - row['M1 Start'], left=row['M1 Start'], color='skyblue', edgecolor='black')
-        ax.text((row['M1 Start'] + row['M1 End'])/2, m1_name, row['Job'], ha='center', va='center')
-        
-        # Idle di Mesin 2
-        if row['M2 Start'] > row['M1 End']:
-            ax.barh(m2_name, row['M2 Start'] - row['M1 End'], left=row['M1 End'], color='lightgrey', hatch='//', edgecolor='grey')
-        
-        # Plot Mesin 2
-        ax.barh(m2_name, row['M2 End'] - row['M2 Start'], left=row['M2 Start'], color='salmon', edgecolor='black')
-        ax.text((row['M2 Start'] + row['M2 End'])/2, m2_name, row['Job'], ha='center', va='center')
+    for job_id, job in enumerate(jobs_data):
+        for task_id, (machine, duration) in enumerate(job['tasks']):
+            start = model.new_int_var(0, horizon, f"s_{job_id}_{task_id}")
+            end = model.new_int_var(0, horizon, f"e_{job_id}_{task_id}")
+            interval = model.new_interval_var(start, duration, end, f"i_{job_id}_{task_id}")
+            all_tasks[job_id, task_id] = {'start': start, 'end': end, 'dur': duration, 'name': job['name']}
+            machine_to_intervals[machine].append(interval)
 
-    ax.set_title(f"Gantt Chart (Makespan: {w2_time})")
-    ax.set_xlabel("Waktu")
-    st.pyplot(fig)
+    # Batasan: Mesin tidak boleh memproses dua tugas secara bersamaan
+    for m_idx in range(num_machines):
+        model.add_no_overlap(machine_to_intervals[m_idx])
+
+    # Batasan: Tugas dalam satu job harus berurutan
+    for job_id, job in enumerate(jobs_data):
+        for task_id in range(len(job['tasks']) - 1):
+            model.add(all_tasks[job_id, task_id + 1]['start'] >= all_tasks[job_id, task_id]['end'])
+
+    # Batasan & Tujuan: Meminimalkan waktu penyelesaian total (Makespan)
+    obj_var = model.new_int_var(0, horizon, "makespan")
+    model.add_max_equality(obj_var, [all_tasks[job_id, len(job['tasks'])-1]['end'] for job_id, job in enumerate(jobs_data)])
+    model.minimize(obj_var)
+    
+    solver = cp_model.CpSolver()
+    if solver.solve(model) == cp_model.OPTIMAL:
+        st.success(f"Makespan Optimal ditemukan: {solver.objective_value}")
+        
+        # --- Visualisasi Gantt Chart yang Ditingkatkan ---
+        fig, ax = plt.subplots(figsize=(12, 6))
+        all_event_times = {0, solver.objective_value} # Untuk label sumbu X
+        
+        # Daftar warna unik untuk setiap job
+        colors = plt.cm.get_cmap('tab10', num_jobs)
+        
+        # Iterasi melalui setiap mesin
+        for m_idx, m_name in enumerate(machine_names):
+            tasks_on_m = []
+            
+            # Kumpulkan semua tugas yang dijadwalkan pada mesin ini
+            for j_id in range(num_jobs):
+                for t_id, (machine, dur) in enumerate(jobs_data[j_id]['tasks']):
+                    if machine == m_idx:
+                        s = solver.value(all_tasks[j_id, t_id]['start'])
+                        e = solver.value(all_tasks[j_id, t_id]['end'])
+                        tasks_on_m.append({
+                            'start': s, 
+                            'end': e, 
+                            'name': jobs_data[j_id]['name'], 
+                            'color_idx': j_id
+                        })
+                        all_event_times.update([s, e])
+            
+            # Urutkan tugas berdasarkan waktu mulai untuk penanganan idle
+            tasks_on_m.sort(key=lambda x: x['start'])
+            
+            curr_m_time = 0
+            
+            # Plot setiap tugas pada mesin
+            for t in tasks_on_m:
+                duration = t['end'] - t['start']
+                
+                # Tambahkan area "Idle" jika ada kekosongan
+                if t['start'] > curr_
