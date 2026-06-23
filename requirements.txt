@@ -1,4 +1,5 @@
-ortools
 streamlit
+ortools
 matplotlib
 pandas
+numpy
