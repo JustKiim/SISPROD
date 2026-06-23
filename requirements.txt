@@ -1,5 +1,5 @@
 streamlit
 ortools
-matplotlib
+matplotlib>=3.6.0
 pandas
 numpy
